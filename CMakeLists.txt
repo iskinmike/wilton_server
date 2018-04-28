@@ -23,6 +23,8 @@ set ( staticlib_pion_USE_OPENSSL ON CACHE BOOL "Use OpenSSL lib for https" )
 set ( staticlib_pion_WILTON_INCLUDE ${WILTON_DIR}/core/include CACHE STRING "" )
 set ( staticlib_pion_WILTON_LOGGING_INCLUDE ${WILTON_DIR}/modules/wilton_logging/include CACHE STRING "" )
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
 # dependencies add
 if ( STATICLIB_TOOLCHAIN MATCHES "(android|windows|macosx)_.+" )
     staticlib_add_subdirectory ( ${STATICLIB_DEPS}/external_asio )
@@ -47,6 +49,8 @@ set ( ${PROJECT_NAME}_DEPS
         staticlib_tinydir
         staticlib_pimpl )
 staticlib_pkg_check_modules ( ${PROJECT_NAME}_DEPS_PC REQUIRED ${PROJECT_NAME}_DEPS )
+
+
 
 # library
 set ( ${PROJECT_NAME}_PLATFORM_SRC ) 
@@ -73,10 +77,20 @@ add_library ( ${PROJECT_NAME} SHARED
         ${CMAKE_CURRENT_LIST_DIR}/src/server/server.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/server/wilton_server.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/server/wiltoncall_server.cpp
+        # websocket_server
+        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/wilton_websocket_server.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/wiltoncall_websocket_server.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/websocket_handler.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/web_socket/WebSocket.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/web_socket/sha1/sha1.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/web_socket/base64/base64.cpp
         # export
         ${CMAKE_CURRENT_LIST_DIR}/src/wiltoncall_server.cpp
         ${${PROJECT_NAME}_RESFILE}
         ${${PROJECT_NAME}_DEFFILE} )
+
+#set(BOOST_PATH "/home/mikhail/workspace/tmp/beast_test")
+set(BOOST_PATH "/home/mikhail/workspace/utils/boost/")
 
 target_link_libraries ( ${PROJECT_NAME} PRIVATE
         wilton_core
@@ -90,12 +104,15 @@ if ( STATICLIB_TOOLCHAIN MATCHES "(linux|maxosx)_.+" )
             crypto ssl )
 endif ( )
 
+#add_definitions(-DASIO_STANDALONE)
+
 target_include_directories ( ${PROJECT_NAME} BEFORE PRIVATE 
         ${CMAKE_CURRENT_LIST_DIR}/src
         ${CMAKE_CURRENT_LIST_DIR}/include
         ${WILTON_DIR}/core/include
         ${WILTON_DIR}/modules/wilton_loader/include
         ${WILTON_DIR}/modules/wilton_logging/include
+        ${BOOST_PATH}
         ${${PROJECT_NAME}_DEPS_PC_INCLUDE_DIRS} )
 
 target_compile_options ( ${PROJECT_NAME} PRIVATE ${${PROJECT_NAME}_DEPS_PC_CFLAGS_OTHER} )

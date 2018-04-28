@@ -207,7 +207,7 @@ std::vector<std::unique_ptr<wilton_HttpPath, http_path_deleter>> create_paths(
                     int64_t requestHandle = rreg->put(request);
                     sl::json::value* cb_ptr = static_cast<sl::json::value*> (passed);
                     sl::json::value params = cb_ptr->clone();
-                    // params structure is pre-checked
+                    // params structure is pre-checked. Add requestHandle to params
                     if (sl::json::type::nullt == params["args"].json_type()) {
                         auto args = std::vector<sl::json::value>();
                         args.emplace_back(requestHandle);
@@ -255,8 +255,9 @@ std::vector<wilton_HttpPath*> wrap_paths(std::vector<std::unique_ptr<wilton_Http
 
 support::buffer server_create(sl::io::span<const char> data) {
     auto conf_in = sl::json::load(data);
-    auto views = extract_and_delete_views(conf_in);
     auto conf = conf_in.dumps();
+    auto views = extract_and_delete_views(conf_in);
+    /*auto*/ conf = conf_in.dumps();
     server_ctx ctx;
     auto paths = create_paths(views, ctx);
     auto paths_pass = wrap_paths(paths);
