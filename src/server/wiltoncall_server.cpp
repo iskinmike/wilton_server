@@ -161,7 +161,7 @@ std::vector<http_view> extract_and_delete_views(sl::json::value& conf) {
 //                    " conf: [" + conf.dumps() + "]"));
             for (auto& va : fi.as_array()) {
                 if (sl::json::type::object != va.json_type()) throw support::exception(TRACEMSG(
-                        "Invalid configuration object specified: 'views' is not a 'object'," +
+                        "Invalid configurastd::unique_ptr<worker_data>tion object specified: 'views' is not a 'object'," +
                         "index: [" + sl::support::to_string(i) + "], conf: [" + conf.dumps() + "]"));
                 views.emplace_back(http_view(va));
             }
@@ -620,6 +620,7 @@ void initialize() {
     shared_request_registry();
     shared_server_registry();
     shared_response_writer_registry();
+
 }
 
 } // namespace

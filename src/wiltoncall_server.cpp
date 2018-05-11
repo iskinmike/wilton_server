@@ -81,6 +81,8 @@ support::buffer websocket_server_create(sl::io::span<const char> data);
 support::buffer websocket_server_stop(sl::io::span<const char> data);
 
 support::buffer websocket_send(sl::io::span<const char> data);
+
+void initialize();
 } // namespace
 }
 
@@ -88,6 +90,8 @@ extern "C" char* wilton_module_init() {
     try {
         // server
         wilton::server::initialize();
+        wilton::websocket_server::initialize();
+
         wilton::support::register_wiltoncall("server_create", wilton::server::server_create);
         wilton::support::register_wiltoncall("server_stop", wilton::server::server_stop);
         wilton::support::register_wiltoncall("request_get_metadata", wilton::server::request_get_metadata);
