@@ -14,12 +14,12 @@ enum class methods {
     on_open, on_close, on_message, on_error
 };
 
-void wilton_websocket_server::send(uint64_t ws_id, string data) {
-    std::cout << "ws server send: [" << data <<  "]" << std::endl;
-    std::string msg = ws_handlers[ws_id]->gen_frame(WebSocketFrameType::TEXT_FRAME, data);
-//    send(msg);
-    ws_handlers[ws_id]->send(msg);
-}
+//void wilton_websocket_server::send(uint64_t ws_id, string data) {
+//    std::cout << "ws server send: [" << data <<  "]" << std::endl;
+//    std::string msg = ws_handlers[ws_id]->gen_frame(WebSocketFrameType::TEXT_FRAME, data);
+////    send(msg);
+//    ws_handlers[ws_id]->send(msg);
+//}
 
 wilton_websocket_server::wilton_websocket_server(uint32_t number_of_threads, uint16_t port,
                                                  asio::ip::address_v4 ip_address/*, std::vector<std::shared_ptr<worker_data>> paths, std::vector<ws_views> views*/) :
@@ -61,8 +61,8 @@ void wilton_websocket_server::handle_connection(staticlib::pion::tcp_connection_
     std::string resource = message.substr(message.find("GET")+5, message.find("HTTP/1.1")-6);
     // И если это запрос на работу с вебсокетами создать ws_worker
     // При этом засунув его в специальный контейнер
-    worker_data proxy_ws_data = websocket_data_storage[resource];
-    ws_worker* tmp  = new ws_worker(tcp_conn, proxy_ws_data);
+    websocket_worker_data proxy_ws_data = websocket_data_storage[resource];
+    websocket_worker* tmp  = new websocket_worker(tcp_conn, proxy_ws_data);
 //    websocket_worker_storage[resource] = tmp;// Нуно по другому так работать не будет
     // Теперь нужно запустить prepare handler
 //    auto prepare_handler = websocket_prepare_handler_storage[resource];

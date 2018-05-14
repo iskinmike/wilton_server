@@ -30,7 +30,9 @@ namespace websocket_server {
 class websocket_server_context {
 public:
     std::vector<ws_views> views;
-    std::vector<std::shared_ptr<worker_data>> paths;
+    std::vector<std::shared_ptr<websocket_worker_data>> paths;
+    // Не обязательно хранить тут конкретно эти объекты
+    // Моэно хранить и json данные
     websocket_server_context(){}
     ~websocket_server_context(){
         views.clear(); // TODO удаление данных
@@ -52,9 +54,9 @@ namespace {
     }
 
     // initialized from wilton_module_init
-    std::shared_ptr<support::handle_registry<ws_worker>> shared_websocket_worker_registry() {
-        static auto registry = std::make_shared<wilton::support::handle_registry<ws_worker>>(
-            [] (ws_worker* worker) STATICLIB_NOEXCEPT {
+    std::shared_ptr<support::handle_registry<websocket_worker>> shared_websocket_worker_registry() {
+        static auto registry = std::make_shared<wilton::support::handle_registry<websocket_worker>>(
+            [] (websocket_worker* worker) STATICLIB_NOEXCEPT {
                 // TODO
 //                (void* ) worker;
                 worker->stop();
@@ -65,40 +67,47 @@ namespace {
 
 //    std::vector<wilton_websocket_server*> websocket_servers;
 
-    ws_views extract_and_delete_websocket_views(sl::json::value& conf) {
+    std::vector<ws_views> extract_and_delete_websocket_views(sl::json::value& conf) {
         std::vector<sl::json::field>& fields = conf.as_object_or_throw(TRACEMSG(
                 "Invalid configuration object specified: invalid type," +
                 " conf: [" + conf.dumps() + "]"));
-        ws_views views;
+        std::vector<ws_views> views;
         uint32_t i = 0;
         for (auto it = fields.begin(); it != fields.end(); ++it) {
             sl::json::field& fi = *it;
-            if ("websocket_views" == fi.name()) {
+            if ("websocket_views" == fi.name()) { // should be an array
                 if (sl::json::type::array != fi.json_type()) throw support::exception(TRACEMSG(
                         "Invalid configuration object specified: 'websocket_views' attr is not a list," +
                         " conf: [" + conf.dumps() + "]"));
-                for (auto& va : fi.as_array()) {
-                    if (sl::json::type::object != va.json_type()) throw support::exception(TRACEMSG(
-                            "Invalid configuration object specified: 'views' is not a 'object'," +
-                            "index: [" + sl::support::to_string(i) + "], conf: [" + conf.dumps() + "]"));
-                    // Нужно определить метод
-                    for (const sl::json::field& fi : va.as_object()) {
-                        auto& name = fi.name();
-                        if ("method" == name) {
-                            std::string method = fi.as_string_nonempty_or_throw(name);
-                            if (!method.compare("ONOPEN")) {
-                                views.onopen_view.setup_values(va);
-                            } else if (!method.compare("ONCLOSE")){
-                                views.onclose_view.setup_values(va);
-                            } else if (!method.compare("ONMESSAGE")){
-                                views.onmessage_view.setup_values(va);
-                            } else if (!method.compare("ONERROR")){
-                                views.onerror_view.setup_values(va);
-                            } else {
-                                throw sl::support::exception(TRACEMSG("Unknown method type: [" + name + "]"));
+                for (auto& view_array : fi.as_array()) { // should be an array
+                    if (sl::json::type::array != view_array.json_type()) throw support::exception(TRACEMSG(
+                            "Invalid configuration object specified: 'websocket_views' view_array attr is not an array," +
+                            " conf: [" + conf.dumps() + "]"));
+                    ws_views view;
+                    for (auto& va : view_array.as_array()) { // should be an object with {}
+                        if (sl::json::type::object != va.json_type()) throw support::exception(TRACEMSG(
+                                "Invalid configuration object specified: 'websocket_views' is not a 'object'," +
+                                "index: [" + sl::support::to_string(i) + "], conf: [" + conf.dumps() + "]"));
+                        // Determine method
+                        for (const sl::json::field& fi : va.as_object()) {
+                            auto& name = fi.name();
+                            if ("method" == name) {
+                                std::string method = fi.as_string_nonempty_or_throw(name);
+                                if (!method.compare("ONOPEN")) {
+                                    view.onopen_view.setup_values(va);
+                                } else if (!method.compare("ONCLOSE")){
+                                    view.onclose_view.setup_values(va);
+                                } else if (!method.compare("ONMESSAGE")){
+                                    view.onmessage_view.setup_values(va);
+                                } else if (!method.compare("ONERROR")){
+                                    view.onerror_view.setup_values(va);
+                                } else {
+                                    throw sl::support::exception(TRACEMSG("Unknown method type: [" + name + "]"));
+                                }
                             }
                         }
                     }
+                    views.push_back(view);
                 }
                 // drop views attr and return immediately (iters are invalidated)
                 fields.erase(it);
@@ -112,23 +121,26 @@ namespace {
     }
 
 
-    std::vector<std::shared_ptr<worker_data>> create_websocket_paths(
+    std::vector<std::shared_ptr<websocket_worker_data>> create_websocket_paths(
             const std::vector<ws_views>& views) {
-        std::vector<std::shared_ptr<worker_data>> res;
+        std::vector<std::shared_ptr<websocket_worker_data>> res;
 
         // basic handler that calls wiltoncall_runscript
         auto basic_handler = [] (void* passed, std::string message, int64_t requestHandle){
-
-            char* passed_char_ptr = static_cast<char*> (passed);
-            std::string passed_json_str(passed_char_ptr);
+            sl::json::value* cb_ptr = static_cast<sl::json::value*> (passed);
+//            std::cout << "basic_handler passed: [" <<  cb_ptr << "]" << std::endl;
+//            sl::json::value params = cb_ptr->clone();
+//            char* passed_char_ptr = static_cast<char*> (passed);
+//            std::string passed_json_str(passed_char_ptr);
 //            std::cout << "passed_json_str:    [" << passed_json_str << "]" << std::endl;
-            sl::json::value cb_ptr = sl::json::loads(passed_json_str);//static_cast<sl::json::value*> (passed);
+//            sl::json::value cb_ptr = sl::json::loads(passed_json_str);//static_cast<sl::json::value*> (passed);
 
             std::string engine("");
             char* out = nullptr;
             int out_len = 0;
 
-            sl::json::value json =  cb_ptr.clone();//sl::json::loads(json_in);
+            sl::json::value json =  cb_ptr->clone();//sl::json::loads(json_in);
+//            std::cout << "basic_handler passed json: [" <<  json.dumps() << "]" << std::endl;
             std::vector<sl::json::value> args;
             args.emplace_back(requestHandle); // id value
             if (!message.empty()) {
@@ -171,7 +183,7 @@ namespace {
             basic_handler(passed, message, requestHandle);
         };
 
-        auto ws_main_handler = [] (ws_worker* worker) {
+        auto ws_main_handler = [] (websocket_worker* worker) {
             // Положить в регистр и получить id
             auto rworker = shared_websocket_worker_registry();
             int64_t worker_id = rworker->put(worker);
@@ -181,22 +193,29 @@ namespace {
         };
 
         for (auto& vi : views) {
-            worker_data tmpdata;
-            std::shared_ptr<worker_data> data = std::make_shared<worker_data>(tmpdata);
-            // setup data
-            data->open_data =    static_cast<void*> (const_cast<char*>(vi.onopen_view.data.c_str()));
-            data->close_data =   static_cast<void*> (const_cast<char*>(vi.onclose_view.data.c_str()));
-            data->error_data =   static_cast<void*> (const_cast<char*>(vi.onerror_view.data.c_str()));
-            data->message_data = static_cast<void*> (const_cast<char*>(vi.onmessage_view.data.c_str()));
-            // setup handlers
-            data->open_handler =    open_handler;
-            data->close_handler =   close_handler;
-            data->error_handler =   error_handler;
-            data->message_handler = message_handler;
+            websocket_worker_data tmpdata;
+            std::shared_ptr<websocket_worker_data> data = std::make_shared<websocket_worker_data>(tmpdata);
+            if (vi.onopen_view.is_setted) {
+                data->open_data = static_cast<void*> (vi.onopen_view.json_data_ptr);
+                data->open_handler = open_handler;
+            }
+            if (vi.onclose_view.is_setted) {
+                data->close_data = static_cast<void*> (vi.onclose_view.json_data_ptr);
+                data->close_handler = close_handler;
+            }
+            if (vi.onerror_view.is_setted) {
+                data->error_data = static_cast<void*> (vi.onerror_view.json_data_ptr);
+                data->error_handler =   error_handler;
+            }
+            if (vi.onmessage_view.is_setted) {
+                data->message_data = static_cast<void*> (vi.onmessage_view.json_data_ptr);
+                data->message_handler = message_handler;
+            }
 
-            data->websocket_handler = ws_main_handler;
+            data->websocket_prepare_handler = ws_main_handler;
 
             data->resource = vi.onopen_view.path;
+            // TODO Error handling
 //            const char* err = nullptr; // test.c_str();
 //            if (nullptr != err) throw support::exception(TRACEMSG(err));
             res.push_back(data);
@@ -210,7 +229,6 @@ void initialize(){
     shared_websocket_server_registry();
 }
 
-
 support::buffer websocket_server_create(sl::io::span<const char> data) {
      auto json = sl::json::load(data);
 
@@ -223,9 +241,10 @@ support::buffer websocket_server_create(sl::io::span<const char> data) {
      auto ip = std::string{};
 
 //     auto views = extract_and_delete_handlers(json);
-     ws_views ws_views_data = extract_and_delete_websocket_views(json);
+//     ws_views ws_views_data = extract_and_delete_websocket_views(json);
 //     ws_server_ctx ctx; // TODO Проверку всего контекста и путей а не только 1 раз
-     /*real_views*/ ctx->views.push_back(ws_views_data);
+//     /*real_views*/ ctx->views.push_back(ws_views_data);
+     ctx->views = extract_and_delete_websocket_views(json);
      ctx->paths = create_websocket_paths(ctx->views);
      // Нужно сделать обертку по типу сервера через
      // create_websocket_paths(ws_views_data);
@@ -286,7 +305,7 @@ support::buffer websocket_server_stop(sl::io::span<const char> data) {
     auto server = regserver->remove(id);
 
     server.first->stop();
-//    delete server.first;
+    delete server.first;
 
     std::cout << "[" << json.dumps() << "]" << std::endl;
     return support::make_null_buffer();
@@ -294,14 +313,11 @@ support::buffer websocket_server_stop(sl::io::span<const char> data) {
 
 support::buffer websocket_send(sl::io::span<const char> data) {
     auto json = sl::json::load(data);
-    uint64_t wss_id = -1;
     uint64_t ws_id = -1;
     auto message = std::string{};
     for (const sl::json::field& fi : json.as_object()) {
         auto& name = fi.name();
-        if ("websocketServerHandle" == name) {
-            wss_id = fi.as_int64_or_throw(name);
-        } else if ("websocketHandle" == name) {
+        if ("websocketHandle" == name) {
             ws_id = fi.as_int64_or_throw(name);
         } else if ("data" == name) {
             message = fi.as_string_or_throw(name);
@@ -310,11 +326,9 @@ support::buffer websocket_send(sl::io::span<const char> data) {
         }
     }
 
-    (void) wss_id; // suppress
     auto rworker = shared_websocket_worker_registry();
     auto worker = rworker->peek(ws_id);
     worker->send(message);
-//    websocket_servers[wss_id]->send(ws_id, message);
     return support::make_null_buffer();
 }
 

@@ -13,7 +13,8 @@
 
 //#include <boost/beast/core.hpp>
 //#include <boost/beast/websocket.hpp>
-#include "websocket_handler.hpp"
+//#include "websocket_handler.hpp"
+#include "websocket_worker.hpp"
 #include <functional>
 #include <map>
 #include <set>
@@ -31,7 +32,7 @@
 //using handlers_map_type = std::map<std::string, websocket_handler_type>;
 //using onmessage_handle_type = std::function<void(uint64_t, uint64_t, std::string, std::string, std::string)>;
 
-using real_websocket_handler_type = std::function<void(ws_worker*)>;
+//using websocket_handler_type = std::function<void(ws_worker*)>;
 
 template <typename handler_type>
 class ws_view {
@@ -40,67 +41,36 @@ class ws_view {
 public:
     std::string path; // Analog for module /server/views/hi
     std::string method; // ONOPEN, ONCLOSE, ONMESSAGE, ONERROR
-//    handler_type handler;
-    std::string data;
     sl::json::value json_data;
     sl::json::value* json_data_ptr;
+    bool is_setted;
 
-//    std::string renscript_params;
-    std::string module;
-    std::string function;
-    ws_view(){}
+    ws_view(): json_data_ptr(nullptr),is_setted(false) {}
 
     ws_view(const ws_view& view) {
         path     = view.path; 
         method   = view.method; 
-//        handler  = view.handler;
-        data     = view.data;
-        module   = view.module;
-        function = view.function;
+        json_data  = view.json_data.clone();
+        json_data_ptr = &json_data;
     }
 
     ws_view& operator =(const ws_view& view) {
-        // ws_view tmp;
         this->path     = view.path;
         this->method   = view.method;
-//        this->handler  = view.handler;
-        this->data     = view.data;
-        this->module   = view.module;
-        this->function = view.function;
+//        this->data     = view.data;
+//        this->module   = view.module;
+//        this->function = view.function;
+        this->json_data  = view.json_data.clone();
+        this->json_data_ptr = &(this->json_data);
+        this->is_setted = view.is_setted;
         return *this;
-    }
-
-    ws_view(const sl::json::value& json) {
-        if (sl::json::type::object != json.json_type()) throw sl::support::exception(TRACEMSG(
-                "Invalid 'views' entry: must be an 'object'," +
-                " entry: [" + json.dumps() + "]"));
-        sl::json::value callbackScript;
-        for (const sl::json::field& fi : json.as_object()) {
-            auto& name = fi.name();
-            if ("method" == name) {
-                method = fi.as_string_nonempty_or_throw(name);
-            } else if ("path" == name) {
-                path = fi.as_string_nonempty_or_throw(name);
-            } else if ("callbackScript" == name) {
-                wilton::support::check_json_callback_script(fi);
-                callbackScript = fi.val().clone();
-            } else {
-                throw sl::support::exception(TRACEMSG("Unknown data field: [" + name + "]"));
-            }
-        }
-
-        std::cout << "cal   lback data" << callbackScript.dumps() << std::endl;
-//        handler = callbackScript.dumps();
-        data = callbackScript.dumps();
-        // json_data = callbackScript.clone();
-        // json_data_ptr = &json_data;
     }
 
     void setup_values(const sl::json::value& json){
         if (sl::json::type::object != json.json_type()) throw sl::support::exception(TRACEMSG(
                 "Invalid 'views' entry: must be an 'object'," +
                 " entry: [" + json.dumps() + "]"));
-        sl::json::value callbackScript;
+//        sl::json::value callbackScript;
         for (const sl::json::field& fi : json.as_object()) {
             auto& name = fi.name();
             if ("method" == name) {
@@ -109,18 +79,18 @@ public:
                 path = fi.as_string_nonempty_or_throw(name);
             } else if ("callbackScript" == name) {
                 wilton::support::check_json_callback_script(fi);
-                callbackScript = fi.val().clone();
+                json_data = fi.val().clone();
+                json_data_ptr = &json_data;
             } else {
                 throw sl::support::exception(TRACEMSG("Unknown data field: [" + name + "]"));
             }
         }
-
-        std::cout << "callback data" << callbackScript.dumps() << std::endl;
-        data = callbackScript.dumps();
+        is_setted = true;
+//        std::cout << "setup_values json_data: [" <<  json_data.dumps() << "]" << std::endl;
     }
 };
-//typedef  std::vector<ws_view<websocket_handler_type>> old_ws_handler_type;
-typedef  std::vector<std::shared_ptr<worker_data>> old_ws_handler_type;
+
+typedef  std::vector<std::shared_ptr<websocket_worker_data>> old_ws_handler_type;
 
 class ws_views {
 public:
@@ -164,24 +134,13 @@ public:
 
 class wilton_websocket_server : public staticlib::pion::tcp_server
 {
-    std::map<uint64_t, std::shared_ptr<websocket_handler>> ws_handlers;
-    std::vector<std::shared_ptr<worker_data>> paths;
-    std::vector<ws_views> views;
-//    std::map<std::string, std::thread> message_threads;
-//    std::set<std::thread> message_threads;
-    /*std::function<void(uint64_t, uint64_t, std::string, std::string, std::string)>*/
-//    onmessage_handle_type recieve_handler;
+//    std::map<uint64_t, std::shared_ptr<websocket_handler>> ws_handlers;
+//    std::vector<std::shared_ptr<worker_data>> paths;
+//    std::vector<ws_views> views;
 
-    std::map<std::string, worker_data> websocket_data_storage;
-//    std::map<std::string, std::shared_ptr<ws_worker>> websocket_worker_storage;
-//    std::map<std::string, real_websocket_handler_type> websocket_prepare_handler_storage;
+    std::map<std::string, websocket_worker_data> websocket_data_storage;
 
 public:
-
-//    handlers_map_type ononpen_handlers;
-//    handlers_map_type onclose_handlers;
-//    handlers_map_type onmessage_handlers;
-//    handlers_map_type onerror_handlers;
 
     wilton_websocket_server(uint32_t number_of_threads, uint16_t port,
         asio::ip::address_v4 ip_address/*, std::vector<std::shared_ptr<worker_data>> paths, std::vector<ws_views> views*/);
@@ -195,18 +154,9 @@ public:
     */
     virtual void handle_connection(staticlib::pion::tcp_connection_ptr& tcp_conn) override;
 
-
-//    void add_handler(const std::string& method, const std::string& resource,
-//            websocket_handler_type websocket_handler);
-    void add_websocket_handler(const std::string& resource, worker_data websocket_handler_data){
+    void add_websocket_handler(const std::string& resource, websocket_worker_data websocket_handler_data){
         websocket_data_storage.emplace(resource, websocket_handler_data);
     }
-
-//    void run_handler(uint64_t wss_id, uint64_t ws_id, std::string method, std::string resource, std::string message);
-
-//    uint64_t get_id() const;
-
-    void send(uint64_t ws_id, std::string data);
 };
 
 
