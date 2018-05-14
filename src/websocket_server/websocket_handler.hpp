@@ -17,11 +17,13 @@
 using async_recieve_handler_type = std::function<void(const std::error_code&, std::size_t)>;
 using async_send_handler_type = std::function<void(const std::error_code&, std::size_t)>;
 
+
 class websocket_handler
 {
     WebSocket ws;
     staticlib::pion::tcp_connection_ptr tcp_conn; // как-то надо ссылку хранить либо хранить самим указатель.
-    char input_data[1024];
+    static const int input_buffer_size = 1024; // Think about changes on http://www.stroustrup.com/bs_faq2.html#in-class
+    char input_data[input_buffer_size];
 
     async_send_handler_type async_send_handler;
     async_recieve_handler_type async_recieve_handler;
@@ -32,12 +34,10 @@ public:
 
     // отправить сообщение
     void send(std::string msg);
-    void send_blocking(std::string msg);
-
-//    void send_data_async(const std::string& data);
+    int send_blocking(std::string msg);
 
     // принять данные TODO, надо понять как с этим взаимодействовать
-    // скорее всего просто внутри хапускать обращение к сокету типа async_recieve
+    // скорее всего просто внутри запускать обращение к сокету типа async_recieve
     void recieve();
     std::string recieve_blocking();
 
@@ -56,10 +56,6 @@ public:
     void setup_async_send_handler(async_send_handler_type handler);
     void setup_async_recieve_handler(async_recieve_handler_type handler);
 };
-
-// ===========================================================================================
-
-
 
 #endif /* WEBSOCKET_HANDLER_H */
 

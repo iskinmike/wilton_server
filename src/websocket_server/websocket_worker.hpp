@@ -4,10 +4,12 @@
 #include "websocket_handler.hpp"
 
 using basic_handler_type = std::function<void(void*, void*)>; // only data
-using onmessage_handler = std::function<void(void*, void*, std::string)>; // data, message
 typedef basic_handler_type onopen_handler;
 typedef basic_handler_type onclose_handler;
-typedef basic_handler_type onerror_handler;
+
+using basic_handler_message_type = std::function<void(void*, void*, std::string)>; // data, message
+typedef basic_handler_message_type onmessage_handler;
+typedef basic_handler_message_type onerror_handler;
 
 class websocket_worker;
 using websocket_prepare_handler_type = std::function<void(websocket_worker*)>;
@@ -76,6 +78,7 @@ public:
     // Сейчас реализовано в wilton_websocket_server
     // Нужно задать для него хэндлеры и данные
     websocket_worker(staticlib::pion::tcp_connection_ptr tcp_conn, websocket_worker_data ws_data);
+    ~websocket_worker();
 
     void start_with_message(std::string message);
     void setup_data(const websocket_worker_data& input_data);
@@ -85,11 +88,12 @@ public:
     void send(std::string message);
 
     void run_open_handler();
-    void run_error_handler();
+    void run_error_handler(const string& error_message);
     void run_close_handler();
-    void run_message_handler(std::string& out_message);
-};
+    void run_message_handler(const string& out_message);
 
+    void send_pong_frame(const string ping_message);
+};
 
 
 #endif /* WEBSOCKET_WORKER_H */

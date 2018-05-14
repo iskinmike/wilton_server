@@ -65,8 +65,6 @@ namespace {
         return registry;
     }
 
-//    std::vector<wilton_websocket_server*> websocket_servers;
-
     std::vector<ws_views> extract_and_delete_websocket_views(sl::json::value& conf) {
         std::vector<sl::json::field>& fields = conf.as_object_or_throw(TRACEMSG(
                 "Invalid configuration object specified: invalid type," +
@@ -172,11 +170,12 @@ namespace {
             int64_t requestHandle = *(static_cast<int64_t*>(user_data));
             basic_handler(passed, std::string{}, requestHandle);
             auto rworker = shared_websocket_worker_registry();
-            rworker->remove(requestHandle);
+            auto worker = rworker->remove(requestHandle);
+            delete worker;
         };
-        auto error_handler = [basic_handler] (void* passed, void* user_data){
+        auto error_handler = [basic_handler] (void* passed, void* user_data, std::string error_message){
             int64_t requestHandle = *(static_cast<int64_t*>(user_data));
-            basic_handler(passed, std::string{}, requestHandle);
+            basic_handler(passed, error_message, requestHandle);
         };
         auto message_handler = [basic_handler] (void* passed, void* user_data, std::string message){
             int64_t requestHandle = *(static_cast<int64_t*>(user_data));
@@ -293,21 +292,19 @@ support::buffer websocket_server_stop(sl::io::span<const char> data) {
 
     uint64_t id = -1;
     for (const sl::json::field& fi : json.as_object()) {
-         auto& name = fi.name();
-         if ("websocketServerHandle" == name) {
-             id = fi.as_int64_or_throw(name);
-         } else {
-             throw wilton::support::exception(TRACEMSG("Unknown data field: [" + name + "]"));
-         }
-     }
+        auto& name = fi.name();
+        if ("websocketServerHandle" == name) {
+         id = fi.as_int64_or_throw(name);
+        } else {
+         throw wilton::support::exception(TRACEMSG("Unknown data field: [" + name + "]"));
+        }
+    }
 
     auto regserver = shared_websocket_server_registry();
     auto server = regserver->remove(id);
 
     server.first->stop();
     delete server.first;
-
-    std::cout << "[" << json.dumps() << "]" << std::endl;
     return support::make_null_buffer();
 }
 

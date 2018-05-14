@@ -1,6 +1,7 @@
 
 #include "websocket_handler.hpp"
 
+
 string websocket_handler::gen_frame(WebSocketFrameType type, string msg) {
     return ws.makeFrame(type, msg);
 }
@@ -16,21 +17,22 @@ void websocket_handler::send(string msg){
     tcp_conn->async_write(asio::buffer(msg), async_send_handler);
 }
 
-void websocket_handler::send_blocking(string msg){
+int websocket_handler::send_blocking(string msg){
     std::error_code ec;
-    tcp_conn->write(asio::buffer(msg), ec);
+    int sended_bytes = tcp_conn->write(asio::buffer(msg), ec);
+    return sended_bytes;
 }
 
 void websocket_handler::recieve(){
     if (!tcp_conn->is_open()) {
         std::cout << "connection closed" << std::endl;
     }
-    tcp_conn->async_read_some(asio::buffer(input_data, 1024), async_recieve_handler);
+    tcp_conn->async_read_some(asio::buffer(input_data, input_buffer_size), async_recieve_handler);
 }
 
 string websocket_handler::recieve_blocking(){
     std::error_code ec;
-    int res = tcp_conn->get_socket().receive(asio::buffer(input_data, 1024), 0, ec);
+    int res = tcp_conn->get_socket().receive(asio::buffer(input_data, input_buffer_size), 0, ec);
     return std::string(input_data, res);
 }
 
@@ -47,9 +49,11 @@ void websocket_handler::answer_handshake(){
 }
 
 void websocket_handler::close(){
-    send(gen_frame(WebSocketFrameType::CLOSING_FRAME, std::string{}));
-//    tcp_conn->finish();
-    tcp_conn->close();
+    if (tcp_conn->is_open()) {
+        send(gen_frame(WebSocketFrameType::CLOSING_FRAME, std::string{}));
+    //    tcp_conn->finish();
+        tcp_conn->close();
+    }
 }
 
 bool websocket_handler::check_handshake_request(const string& msg)

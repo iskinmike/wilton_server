@@ -51,7 +51,6 @@ wilton_websocket_server::wilton_websocket_server(uint32_t number_of_threads, uin
 //std::vector<std::shared_ptr<ws_worker>> storage;
 void wilton_websocket_server::handle_connection(staticlib::pion::tcp_connection_ptr &tcp_conn)
 {
-
     // На самом деле здесь нужно получить данные из tcp соединения разобрать их и если
     std::error_code ec;
     char input_data[1024];
@@ -61,25 +60,9 @@ void wilton_websocket_server::handle_connection(staticlib::pion::tcp_connection_
     std::string resource = message.substr(message.find("GET")+5, message.find("HTTP/1.1")-6);
     // И если это запрос на работу с вебсокетами создать ws_worker
     // При этом засунув его в специальный контейнер
-    websocket_worker_data proxy_ws_data = websocket_data_storage[resource];
-    websocket_worker* tmp  = new websocket_worker(tcp_conn, proxy_ws_data);
-//    websocket_worker_storage[resource] = tmp;// Нуно по другому так работать не будет
-    // Теперь нужно запустить prepare handler
-//    auto prepare_handler = websocket_prepare_handler_storage[resource];
-//    if (prepare_handler == nullptr) {
-//        std::cout << "wrong prepare_handler for " << resource << std::endl;
-//        std::cout << "websocket_prepare_handler_storage.size(): "
-//                  << websocket_prepare_handler_storage.size() << std::endl;
-//        for (auto& el : websocket_prepare_handler_storage) {
-//            std::cout << "el.first: " << el.first << std::endl;
-//            std::cout << "el.second is nul: " << (el.second == nullptr) << std::endl;
-//        }
-//    } else {
-//        prepare_handler(tmp);
-        // Затем запустить его передав туда сообщение
-//        storage.push_back(tmp);
-        tmp->start_with_message(message);
-//    }
+    websocket_worker_data ws_data = websocket_data_storage[resource];
+    websocket_worker* tmp = new websocket_worker(tcp_conn, ws_data);
+    tmp->start_with_message(message); // this worker lifetime will be controlled by handlers in websocket_worker_data
 }
 
 //void wilton_websocket_server::add_handler(const string &method, const string &resource, websocket_handler_type websocket_handler){

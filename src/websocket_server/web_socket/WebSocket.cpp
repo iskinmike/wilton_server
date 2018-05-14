@@ -264,6 +264,7 @@ WebSocketFrameType WebSocket::getFrame(const std::string& input_frame, std::stri
     if(msg_opcode == 0x0) return (msg_fin)?TEXT_FRAME:INCOMPLETE_TEXT_FRAME; // continuation frame ?
     if(msg_opcode == 0x1) return (msg_fin)?TEXT_FRAME:INCOMPLETE_TEXT_FRAME;
     if(msg_opcode == 0x2) return (msg_fin)?BINARY_FRAME:INCOMPLETE_BINARY_FRAME;
+    if(msg_opcode == 0x8) return CLOSING_FRAME;
     if(msg_opcode == 0x9) return PING_FRAME;
     if(msg_opcode == 0xA) return PONG_FRAME;
 
