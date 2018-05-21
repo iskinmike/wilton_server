@@ -33,6 +33,9 @@
 #include "wilton/support/alloc.hpp"
 #include "wilton/support/buffer.hpp"
 
+#include "server/websocket_views.hpp"
+#include "staticlib/pion.hpp"
+
 #include "server/http_path.hpp"
 #include "server/request.hpp"
 #include "server/response_writer.hpp"
@@ -93,6 +96,65 @@ public:
     }
 };
 
+struct wilton_WebsocketPath {
+private:
+    wilton::websocket_server::ws_views delegate;
+
+public:
+
+    wilton_WebsocketPath(wilton::websocket_server::ws_views&& delegate) :
+    delegate(std::move(delegate)) { }
+
+    wilton::websocket_server::ws_views& impl() {
+        return delegate;
+    }
+};
+
+struct wilton_WebsocketView {
+private:
+    wilton::websocket_server::ws_view delegate;
+
+public:
+
+    wilton_WebsocketView(wilton::websocket_server::ws_view&& delegate) :
+    delegate(std::move(delegate)) { }
+
+    wilton::websocket_server::ws_view& impl() {
+        return delegate;
+    }
+};
+
+struct wilton_WebsocketServiceData {
+private:
+    sl::pion::websocket_service_data* delegate;
+
+public:
+    // Здесь тоже не требуется хранение, достаточно скопировать shared_ptr
+    wilton_WebsocketServiceData(sl::pion::websocket_service_data* delegate)
+        : delegate(delegate) {
+    }
+
+    sl::pion::websocket_service_data* impl() {
+        return delegate;
+    }
+};
+
+// Do not store websocket_service object, stores ptr to that object
+// Used only like wrapper for prepare callback function
+struct wilton_WebsocketService {
+private:
+    sl::pion::websocket_service_ptr delegate;
+
+public:
+    wilton_WebsocketService(sl::pion::websocket_service_ptr delegate) {
+        this->delegate.swap(delegate);
+    }
+
+    sl::pion::websocket_service_ptr impl() {
+        return delegate;
+    }
+};
+
 namespace { // anonymous
 
 std::vector<sl::support::observer_ptr<wilton::server::http_path>> wrap_paths(wilton_HttpPath** paths, uint16_t paths_len) {
@@ -104,6 +166,16 @@ std::vector<sl::support::observer_ptr<wilton::server::http_path>> wrap_paths(wil
     }
     return res;
 }
+
+std::vector<sl::pion::websocket_service_data*> wrap_ws_data(wilton_WebsocketServiceData** paths, uint16_t paths_len) {
+    std::vector<sl::pion::websocket_service_data*> res;
+    for (int i = 0; i < paths_len; i++) {
+        wilton_WebsocketServiceData* ptr = paths[i];
+        res.push_back(ptr->impl());
+    }
+    return res;
+}
+
 
 } // namespace
 
@@ -143,8 +215,144 @@ char* wilton_HttpPath_destroy(wilton_HttpPath* path) {
     return nullptr;
 }
 
+
+char*wilton_WebsocketView_create(
+        wilton_WebsocketView** ws_view_out, const char* in_json,
+        int in_json_len){
+    if (nullptr == ws_view_out) return wilton::support::alloc_copy(TRACEMSG("Null 'ws_view_out' parameter specified"));
+    try {
+        wilton::websocket_server::ws_view view;
+        uint16_t json_len_u16 = static_cast<uint16_t> (in_json_len);
+        sl::json::value json = sl::json::loads(std::string{in_json, json_len_u16});
+        view.setup_values(json);
+        // copy prepared views
+        wilton_WebsocketView* ws_view_ptr = new wilton_WebsocketView(std::move(view));
+        *ws_view_out = ws_view_ptr;
+        return nullptr;
+    } catch (const std::exception& e) {
+        return wilton::support::alloc_copy(TRACEMSG(e.what() + "\nException raised"));
+    }
+}
+
+char* wilton_WebsocketView_destroy(wilton_WebsocketView* view) {
+    if (nullptr != view) {
+        delete view;
+        view = nullptr;
+    }
+    return nullptr;
+}
+
+char* wilton_WebsocketPath_create(
+        wilton_WebsocketPath** ws_path_out,
+        wilton_WebsocketView* open_view,
+        wilton_WebsocketView* close_view,
+        wilton_WebsocketView* error_view,
+        wilton_WebsocketView* message_view){
+    if (nullptr == ws_path_out) return wilton::support::alloc_copy(TRACEMSG("Null 'http_path_out' parameter specified"));
+    // other parameters may be null
+    try {
+        wilton::websocket_server::ws_views ws_path;
+        // copy prepared views
+        if (nullptr != open_view) ws_path.onopen_view = open_view->impl();
+        if (nullptr != close_view) ws_path.onclose_view = close_view->impl();
+        if (nullptr != error_view) ws_path.onerror_view = error_view->impl();
+        if (nullptr != message_view) ws_path.onmessage_view = message_view->impl();
+        wilton_WebsocketPath* ws_path_ptr = new wilton_WebsocketPath(std::move(ws_path));
+        *ws_path_out = ws_path_ptr;
+        return nullptr;
+    } catch (const std::exception& e) {
+        return wilton::support::alloc_copy(TRACEMSG(e.what() + "\nException raised"));
+    }
+}
+
+char* wilton_WebsocketPath_destroy(wilton_WebsocketPath* path) {
+    if (nullptr != path) {
+        delete path;
+        path = nullptr;
+    }
+    return nullptr;
+}
+
+
+char* wilton_WebsocketServiceData_create(wilton_WebsocketServiceData** ws_service_data_out,
+                                         wilton_WebsocketPath* path,
+                                         void (*onopen_cb)(void* passed, void* user_data),
+                                         void (*onclose_cb)(void* passed, void* user_data),
+                                         void (*onerror_cb)(void *passed, void *user_data, const char *err, int err_len),
+                                         void (*onmessage_cb)(void *passed, void *user_data, const char *msg, int msg_len),
+                                         void (*main_prepare_cb)(wilton_WebsocketService* ws_service))
+{
+    if (nullptr == ws_service_data_out) return wilton::support::alloc_copy(TRACEMSG("Null 'ws_service_data_out' parameter specified"));
+    try {
+        sl::pion::websocket_service_data* data = new sl::pion::websocket_service_data();//std::make_shared<sl::pion::websocket_service_data>();
+        if (path->impl().onopen_view.is_setted) {
+            data->open_data = static_cast<void*> (path->impl().onopen_view.json_data_ptr);
+            data->open_handler = onopen_cb;
+        }
+        if (path->impl().onclose_view.is_setted) {
+            data->close_data = static_cast<void*> (path->impl().onclose_view.json_data_ptr);
+            data->close_handler = onclose_cb;
+        }
+        if (path->impl().onerror_view.is_setted) {
+            data->error_data = static_cast<void*> (path->impl().onerror_view.json_data_ptr);
+            data->error_handler = onerror_cb;
+        }
+        if (path->impl().onmessage_view.is_setted) {
+            data->message_data = static_cast<void*> (path->impl().onmessage_view.json_data_ptr);
+            data->message_handler = onmessage_cb;
+        }
+
+        auto prepare_handler = [main_prepare_cb] (sl::pion::websocket_service_ptr service) {
+            wilton_WebsocketService* wilton_service = new wilton_WebsocketService{service}; // TODO mayde different path of creation?
+            main_prepare_cb(wilton_service);
+        };
+
+        data->websocket_prepare_handler = prepare_handler;
+
+        data->resource = path->impl().onopen_view.path;
+
+        wilton_WebsocketServiceData* ws_data_ptr = new wilton_WebsocketServiceData{data};
+        *ws_service_data_out = ws_data_ptr;
+        return nullptr;
+    } catch (const std::exception& e) {
+        return wilton::support::alloc_copy(TRACEMSG(e.what() + "\nException raised"));
+    }
+}
+char* wilton_WebsocketServiceData_destroy(wilton_WebsocketServiceData* ws_service_data){
+    if (nullptr != ws_service_data) {
+        delete ws_service_data;
+        ws_service_data = nullptr;
+    }
+    return nullptr;
+}
+
+char* wilton_WebsocketService_create(wilton_WebsocketService** ws_service_out, wilton_WebsocketServiceData* service_data){
+    (void)ws_service_out;
+    (void)service_data;
+    return nullptr;
+}
+char* wilton_WebsocketService_destroy(wilton_WebsocketService* ws_service){
+    if (nullptr != ws_service) {
+        if (nullptr != ws_service->impl()){
+            void* user_data_ptr = ws_service->impl()->get_user_data();
+            delete static_cast<uint64_t*> (user_data_ptr);
+//            delete ws_service->impl();
+            delete ws_service;
+        }
+        ws_service = nullptr;
+    }
+    return nullptr;
+}
+void wilton_WebsocketService_setup_user_data(wilton_WebsocketService* ws_service, void* user_data){
+    ws_service->impl()->setup_user_data(user_data);
+}
+void wilton_WebsocketService_send(wilton_WebsocketService* ws_service, const char *err, int err_len){
+    std::string message{err, static_cast<uint64_t> (err_len)};
+   ws_service->impl()->send(message);
+}
+
 char* wilton_Server_create /* noexcept */ (wilton_Server** server_out, const char* conf_json,
-        int conf_json_len, wilton_HttpPath** paths, int paths_len) /* noexcept */ {
+        int conf_json_len, wilton_HttpPath** paths, int paths_len, wilton_WebsocketServiceData** ws_data, int ws_data_len) /* noexcept */ {
     if (nullptr == server_out) return wilton::support::alloc_copy(TRACEMSG("Null 'server_out' parameter specified"));    
     if (nullptr == conf_json) return wilton::support::alloc_copy(TRACEMSG("Null 'conf_json' parameter specified"));
     if (!sl::support::is_uint32_positive(conf_json_len)) return wilton::support::alloc_copy(TRACEMSG(
@@ -156,7 +364,11 @@ char* wilton_Server_create /* noexcept */ (wilton_Server** server_out, const cha
         sl::json::value json = sl::json::load({conf_json, conf_json_len});
         uint16_t paths_len_u16 = static_cast<uint16_t>(paths_len);
         auto pathsvec = wrap_paths(paths, paths_len_u16);
-        wilton::server::server server{std::move(json), std::move(pathsvec)};
+
+//        if (nullptr != ws_data) {
+        auto datavec = wrap_ws_data(ws_data, static_cast<uint16_t>(ws_data_len));
+//        }
+        wilton::server::server server{std::move(json), std::move(pathsvec), std::move(datavec)};
         wilton_Server* server_ptr = new wilton_Server(std::move(server));
         *server_out = server_ptr;
         return nullptr;

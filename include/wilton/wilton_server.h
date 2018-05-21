@@ -42,6 +42,19 @@ typedef struct wilton_ResponseWriter wilton_ResponseWriter;
 struct wilton_HttpPath;
 typedef struct wilton_HttpPath wilton_HttpPath;
 
+struct wilton_WebsocketPath;
+typedef struct wilton_WebsocketPath wilton_WebsocketPath;
+
+struct wilton_WebsocketView;
+typedef struct wilton_WebsocketView wilton_WebsocketView;
+
+struct wilton_WebsocketServiceData;
+typedef struct wilton_WebsocketServiceData wilton_WebsocketServiceData;
+
+struct wilton_WebsocketService;
+typedef struct wilton_WebsocketService wilton_WebsocketService;
+
+
 char* wilton_HttpPath_create(
         wilton_HttpPath** http_path_out,
         const char* method,
@@ -56,6 +69,28 @@ char* wilton_HttpPath_create(
 char* wilton_HttpPath_destroy(
         wilton_HttpPath* path);
 
+char* wilton_WebsocketView_create(wilton_WebsocketView** ws_view_out, const char *in_json, int in_json_len);
+char* wilton_WebsocketView_destroy(wilton_WebsocketView* view);
+
+char* wilton_WebsocketPath_create(wilton_WebsocketPath** ws_path_out,
+        wilton_WebsocketView *open_view,
+        wilton_WebsocketView *close_view,
+        wilton_WebsocketView *error_view,
+        wilton_WebsocketView *message_view);
+char* wilton_WebsocketPath_destroy(wilton_WebsocketPath* path);
+
+char* wilton_WebsocketServiceData_create(wilton_WebsocketServiceData** ws_service_data_out,
+                                         wilton_WebsocketPath* path,
+                                         void (*onopen_cb)(void *, void *),
+                                         void (*onclose_cb)(void *, void *),
+                                         void (*onerror_cb)(void *, void *, const char *, int),
+                                         void (*onmessage_cb)(void *, void *, const char *, int),
+                                         void (*main_prepare_cb)(wilton_WebsocketService *));
+char* wilton_WebsocketServiceData_destroy(wilton_WebsocketServiceData* ws_service_data);
+char* wilton_WebsocketService_create(wilton_WebsocketService** ws_service_out, wilton_WebsocketServiceData* service_data);
+char* wilton_WebsocketService_destroy(wilton_WebsocketService *ws_service);
+void wilton_WebsocketService_setup_user_data(wilton_WebsocketService* ws_service, void* user_data);
+void wilton_WebsocketService_send(wilton_WebsocketService* ws_service, const char *err, int err_len);
 /*
     {
         "numberOfThreads": uint32_t, 
@@ -89,12 +124,13 @@ char* wilton_HttpPath_destroy(
         "rootRedirectLocation": "http://some/url"
     }
  */
-char* wilton_Server_create(
-        wilton_Server** server_out,
+char* wilton_Server_create(wilton_Server** server_out,
         const char* conf_json,
         int conf_json_len,
         wilton_HttpPath** paths,
-        int paths_len);
+        int paths_len,
+        wilton_WebsocketServiceData** ws_data,
+        int ws_data_len);
 
 char* wilton_Server_stop(
         wilton_Server* server);

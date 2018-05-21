@@ -32,7 +32,6 @@
 #include "openssl/x509.h"
 
 #include "staticlib/config.hpp"
-#include "staticlib/pion.hpp"
 #include "staticlib/io.hpp"
 #include "staticlib/pimpl/forward_macros.hpp"
 #include "staticlib/tinydir.hpp"
@@ -82,7 +81,8 @@ class server::impl : public sl::pimpl::object::impl {
     std::unique_ptr<sl::pion::http_server> server_ptr;
 
 public:
-    impl(serverconf::server_config conf, std::vector<sl::support::observer_ptr<http_path>> paths) :
+    impl(serverconf::server_config conf, std::vector<sl::support::observer_ptr<http_path>> paths,
+            std::vector<sl::pion::websocket_service_data*> websocket_paths) :
     mustache_partials(load_partials(conf.mustache)),
     server_ptr(std::unique_ptr<sl::pion::http_server>(new sl::pion::http_server(
             conf.numberOfThreads, 
@@ -137,6 +137,10 @@ public:
             auto tid_str = sl::support::to_string_any(tid);
             wilton_clean_tls(tid_str.c_str(), static_cast<int>(tid_str.length()));
         });
+        for (auto& path: websocket_paths){
+            server_ptr->add_websocket_handler(path->resource, *(path));
+        }
+
         server_ptr->start();
     }
 
@@ -227,7 +231,7 @@ private:
     }
     
 };
-PIMPL_FORWARD_CONSTRUCTOR(server, (serverconf::server_config)(std::vector<sl::support::observer_ptr<http_path>>), (), support::exception)
+PIMPL_FORWARD_CONSTRUCTOR(server, (serverconf::server_config)(std::vector<sl::support::observer_ptr<http_path>>)(std::vector<sl::pion::websocket_service_data*>), (), support::exception)
 PIMPL_FORWARD_METHOD(server, void, stop, (), (), support::exception)
 
 } // namespace

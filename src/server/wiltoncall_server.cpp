@@ -30,6 +30,7 @@
 #include "staticlib/support.hpp"
 #include "staticlib/json.hpp"
 #include "staticlib/utils.hpp"
+//#include "staticlib/pion.hpp"
 
 #include "wilton/wilton_server.h"
 #include "wilton/wiltoncall.h"
@@ -40,6 +41,8 @@
 #include "wilton/support/payload_handle_registry.hpp"
 #include "wilton/support/logging.hpp"
 #include "wilton/support/misc.hpp"
+
+//#include <iostream>
 
 namespace wilton {
 namespace server {
@@ -90,17 +93,41 @@ public:
     }
 };
 
+class websocket_server_context {
+public:
+    std::vector<wilton_WebsocketPath*> views;
+    std::vector<wilton_WebsocketServiceData*> paths;
+
+    websocket_server_context(websocket_server_context&& other) : views(std::move(other.views)),
+        paths(std::move(other.paths)){}
+
+    websocket_server_context(){}
+
+    ~websocket_server_context(){
+        for (auto& el: views) {
+            wilton_WebsocketPath_destroy(el);
+        }
+        for (auto& el: paths) {
+            wilton_WebsocketServiceData_destroy(el);
+        }
+        views.clear();
+        paths.clear();
+    }
+};
+
 class server_ctx {
     // iterators must be permanent
     std::list<sl::json::value> callbackScripts;
 
 public:
+    websocket_server_context ws_ctx;
+
     server_ctx(const server_ctx&) = delete;
 
     server_ctx& operator=(const server_ctx&) = delete;
 
     server_ctx(server_ctx&& other) :
-    callbackScripts(std::move(other.callbackScripts)) { }
+    callbackScripts(std::move(other.callbackScripts)), ws_ctx(std::move(other.ws_ctx)) { }
 
     server_ctx& operator=(server_ctx&&) = delete;
 
@@ -110,6 +137,10 @@ public:
         callbackScripts.emplace_back(callback.clone());
         return callbackScripts.back();
     }
+
+//    ~server_ctx(){
+//        std::cout<< "delete SRVR CONTEXT" << std::endl;
+//    }
 };
 
 // initialized from wilton_module_init
@@ -152,7 +183,7 @@ std::vector<http_view> extract_and_delete_views(sl::json::value& conf) {
     uint32_t i = 0;
     for (auto it = fields.begin(); it != fields.end(); ++it) {
         sl::json::field& fi = *it;
-        if ("views" == fi.name()) {
+        if (!fi.name().compare("views")) {
             if (sl::json::type::array != fi.json_type()) throw support::exception(TRACEMSG(
                     "Invalid configuration object specified: 'views' attr is not a list," +
                     " conf: [" + conf.dumps() + "]"));
@@ -251,20 +282,209 @@ std::vector<wilton_HttpPath*> wrap_paths(std::vector<std::unique_ptr<wilton_Http
     return res;
 }
 
+std::shared_ptr<support::handle_registry<wilton_WebsocketService>> shared_websocket_worker_registry() {
+    static auto registry = std::make_shared<wilton::support::handle_registry<wilton_WebsocketService>>(
+        [] (wilton_WebsocketService* worker) STATICLIB_NOEXCEPT {
+//            std::cout<< "++++++++++++++++++ shared_websocket_worker_registry HANDLER" << std::endl;
+            wilton_WebsocketService_destroy(worker);
+        });
+    return registry;
+}
+
+std::vector<wilton_WebsocketPath*> extract_and_delete_websocket_views(sl::json::value& conf) {
+    std::vector<sl::json::field>& fields = conf.as_object_or_throw(TRACEMSG(
+            "Invalid configuration object specified: invalid type," +
+            " conf: [" + conf.dumps() + "]"));
+    std::vector<wilton_WebsocketPath*> views;
+    uint32_t i = 0;
+    for (auto it = fields.begin(); it != fields.end(); ++it) {
+        sl::json::field& fi = *it;
+        if ("websocket_views" == fi.name()) { // should be an array
+            if (sl::json::type::array != fi.json_type()) throw support::exception(TRACEMSG(
+                    "Invalid configuration object specified: 'websocket_views' attr is not a list," +
+                    " conf: [" + conf.dumps() + "]"));
+            for (auto& view_array : fi.as_array()) { // should be an array
+                if (sl::json::type::array != view_array.json_type()) throw support::exception(TRACEMSG(
+                        "Invalid configuration object specified: 'websocket_views' view_array attr is not an array," +
+                        " conf: [" + conf.dumps() + "]"));
+                wilton_WebsocketView* open_view = nullptr;
+                wilton_WebsocketView* close_view = nullptr;
+                wilton_WebsocketView* error_view = nullptr;
+                wilton_WebsocketView* message_view = nullptr;
+                for (auto& va : view_array.as_array()) { // should be an object with {}
+                    if (sl::json::type::object != va.json_type()) throw support::exception(TRACEMSG(
+                            "Invalid configuration object specified: 'websocket_views' is not a 'object'," +
+                            "index: [" + sl::support::to_string(i) + "], conf: [" + conf.dumps() + "]"));
+                    // Determine method
+                    for (const sl::json::field& fi : va.as_object()) {
+                        auto& name = fi.name();
+                        if ("method" == name) {
+                            std::string json_val = va.dumps();
+                            int json_val_len = static_cast<int>(json_val.length());
+                            std::string method = fi.as_string_nonempty_or_throw(name);
+                            if (!method.compare("ONOPEN")) {
+                                // TODO check error
+                                wilton_WebsocketView_create(std::addressof(open_view), json_val.c_str(), json_val_len);
+                            } else if (!method.compare("ONCLOSE")){
+                                // TODO check error
+                                wilton_WebsocketView_create(std::addressof(close_view), json_val.c_str(), json_val_len);
+                            } else if (!method.compare("ONERROR")){
+                                // TODO check error
+                                wilton_WebsocketView_create(std::addressof(error_view), json_val.c_str(), json_val_len);
+                            } else if (!method.compare("ONMESSAGE")){
+                                // TODO check error
+                                wilton_WebsocketView_create(std::addressof(message_view), json_val.c_str(), json_val_len);
+                            } else {
+                                throw sl::support::exception(TRACEMSG("Unknown method type: [" + name + "]"));
+                            }
+                        }
+                    }
+                }
+                wilton_WebsocketPath* path = nullptr;
+                // views will be copied into path 
+                // TODO check error            
+                wilton_WebsocketPath_create(std::addressof(path), open_view, close_view, error_view, message_view);
+                views.push_back(path);
+                // explicit delete unused views
+                wilton_WebsocketView_destroy(open_view);
+                wilton_WebsocketView_destroy(close_view);
+                wilton_WebsocketView_destroy(error_view);
+                wilton_WebsocketView_destroy(message_view);
+            }
+            // drop views attr and return immediately (iters are invalidated)
+            fields.erase(it);
+            return views;
+        }
+        i++;
+    }
+    throw support::exception(TRACEMSG(
+            "Invalid configuration object specified: 'views' list not specified," +
+            " conf: [" + conf.dumps() + "]"));
+}
+
+// =========================================================================
+// basic handler that calls wiltoncall_runscript
+#define BASIC_HANDLER(passed, message, requestHandle) \
+    sl::json::value* cb_ptr = static_cast<sl::json::value*> (passed);\
+    std::string engine("");\
+    char* out = nullptr;\
+    int out_len = 0;\
+    sl::json::value json =  cb_ptr->clone();\
+    std::vector<sl::json::value> args;\
+    args.emplace_back(requestHandle); \
+    if (!message.empty()) { \
+        args.emplace_back(message);\
+    }\
+    json.as_object_or_throw().emplace_back("args", std::move(args));\
+    std::string json_in = json.dumps();\
+    char* run_error = wiltoncall_runscript(engine.c_str(), engine.size(), json_in.c_str(), static_cast<int> (json_in.size()),\
+                         std::addressof(out), std::addressof(out_len));\
+    if (nullptr == run_error) {\
+        if (nullptr != out) {\
+            wilton_free(out);\
+        }\
+    } else {\
+        wilton_free(run_error); \
+    }
+
+std::vector<wilton_WebsocketServiceData*> create_websocket_paths(
+        const std::vector<wilton_WebsocketPath*>& views) {
+    std::vector<wilton_WebsocketServiceData*> res;
+
+    // handler that registers websocket for connection
+    auto open_handler = [/*basic_handler*/] (void* passed, void* user_data) {
+        int64_t requestHandle = *(static_cast<int64_t*>(user_data)); //rreg->put(tmp_server, static_cast<std::vector<std::string>> (ctx));
+        BASIC_HANDLER(passed, std::string{}, requestHandle);
+    };
+    // handler that removes registered websocket
+    auto close_handler = [] (void* passed, void* user_data){
+        int64_t requestHandle = *(static_cast<int64_t*>(user_data));
+        BASIC_HANDLER(passed, std::string{}, requestHandle);
+        auto rworker = shared_websocket_worker_registry();
+        auto worker = rworker->remove(requestHandle);
+        wilton_WebsocketService_destroy(worker);
+    };
+    auto error_handler = [] (void* passed, void* user_data, const char* err, int err_len){
+        int64_t requestHandle = *(static_cast<int64_t*>(user_data));
+        std::string error{err, static_cast<uint64_t>(err_len)};
+        BASIC_HANDLER(passed, error, requestHandle);
+    };
+    auto message_handler = [] (void* passed, void* user_data, const char* msg, int msg_len){
+        int64_t requestHandle = *(static_cast<int64_t*>(user_data));
+        std::string message{msg, static_cast<uint64_t>(msg_len)};
+        BASIC_HANDLER(passed, message, requestHandle);
+    };
+
+    auto ws_main_handler = [] (wilton_WebsocketService* worker) {
+        // Положить в регистр и получить id
+        auto rworker = shared_websocket_worker_registry();
+        int64_t worker_id = rworker->put(worker);
+        // Записать id в данные для onopen
+        wilton_WebsocketService_setup_user_data(worker, static_cast<void*> (new int64_t(worker_id)));
+        // Собственно все
+    };
+
+    for (auto& vi : views) {
+        wilton_WebsocketServiceData* data = nullptr;
+        wilton_WebsocketServiceData_create(std::addressof(data), vi,
+                open_handler, close_handler, error_handler, message_handler, ws_main_handler);
+
+        res.push_back(data);
+    }
+    return res;
+}
+// ============================================================================
+
+
 } // namespace
+
+support::buffer websocket_send(sl::io::span<const char> data) {
+//    std::cout << "==================== websocket_send called" << std::endl;
+    auto json = sl::json::load(data);
+    uint64_t ws_id = -1;
+    auto message = std::string{};
+    for (const sl::json::field& fi : json.as_object()) {
+        auto& name = fi.name();
+        if ("websocketHandle" == name) {
+            ws_id = fi.as_int64_or_throw(name);
+        } else if ("data" == name) {
+            message = fi.as_string_or_throw(name);
+        } else {
+            throw wilton::support::exception(TRACEMSG("Unknown data field: [" + name + "]"));
+        }
+    }
+
+    auto rworker = shared_websocket_worker_registry();
+//    std::cout << "==================== shared_websocket_worker_registry called [" << ws_id << "]" << std::endl;
+    auto worker = rworker->peek(ws_id);
+//    std::cout << "==================== peek called" << std::endl;
+    wilton_WebsocketService_send(worker, message.c_str(), static_cast<int>(message.length()));
+//    std::cout << "==================== wilton_WebsocketService_send called" << std::endl;
+//    worker->send(message);
+    return support::make_null_buffer();
+}
 
 support::buffer server_create(sl::io::span<const char> data) {
     auto conf_in = sl::json::load(data);
     auto conf = conf_in.dumps();
+//    std::cout << "****** start conf [" << conf << "]" << std::endl;
     auto views = extract_and_delete_views(conf_in);
     /*auto*/ conf = conf_in.dumps();
+//    std::cout << "****** delete_views [" << conf << "]" << std::endl;
+
     server_ctx ctx;
+//    websocket_server_context* ws_ctx = new websocket_server_context();
+    ctx.ws_ctx.views = extract_and_delete_websocket_views(conf_in);
+    ctx.ws_ctx.paths = create_websocket_paths(ctx.ws_ctx.views);
+    conf = conf_in.dumps();
+//    std::cout << "****** delete_websocket_views [" << conf << "]" << std::endl;
     auto paths = create_paths(views, ctx);
     auto paths_pass = wrap_paths(paths);
     wilton_Server* server = nullptr;
     char* err = wilton_Server_create(std::addressof(server),
             conf.c_str(), static_cast<int>(conf.length()), 
-            paths_pass.data(), static_cast<int>(paths_pass.size()));
+            paths_pass.data(), static_cast<int>(paths_pass.size()),
+            ctx.ws_ctx.paths.data(), static_cast<int>(ctx.ws_ctx.paths.size()));
     if (nullptr != err) support::throw_wilton_error(err, TRACEMSG(err));
     auto sreg = shared_server_registry();
     int64_t handle = sreg->put(server, std::move(ctx));
@@ -621,6 +841,7 @@ void initialize() {
     shared_server_registry();
     shared_response_writer_registry();
 
+    shared_websocket_worker_registry();
 }
 
 } // namespace

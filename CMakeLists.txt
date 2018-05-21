@@ -77,14 +77,6 @@ add_library ( ${PROJECT_NAME} SHARED
         ${CMAKE_CURRENT_LIST_DIR}/src/server/server.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/server/wilton_server.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/server/wiltoncall_server.cpp
-        # websocket_server
-        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/wilton_websocket_server.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/wiltoncall_websocket_server.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/websocket_handler.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/websocket_worker.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/web_socket/WebSocket.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/web_socket/sha1/sha1.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/websocket_server/web_socket/base64/base64.cpp
         # export
         ${CMAKE_CURRENT_LIST_DIR}/src/wiltoncall_server.cpp
         ${${PROJECT_NAME}_RESFILE}

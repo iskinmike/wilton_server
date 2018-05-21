@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "staticlib/pimpl.hpp"
+#include "staticlib/pion.hpp"
 
 #include "server/http_path.hpp"
 #include "server/request.hpp"
@@ -49,7 +50,8 @@ public:
      */
     PIMPL_CONSTRUCTOR(server)
             
-    server(serverconf::server_config conf, std::vector<sl::support::observer_ptr<http_path>> paths);
+    server(serverconf::server_config conf, std::vector<sl::support::observer_ptr<http_path>> paths,
+           std::vector<sl::pion::websocket_service_data*> websocket_paths);
     
     void stop();
     

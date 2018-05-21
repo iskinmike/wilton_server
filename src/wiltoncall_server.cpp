@@ -71,26 +71,18 @@ support::buffer request_send_later(sl::io::span<const char> data);
 
 support::buffer request_send_with_response_writer(sl::io::span<const char> data);
 
-void initialize();
-
-} // namespace
-
-namespace websocket_server{
-support::buffer websocket_server_create(sl::io::span<const char> data);
-
-support::buffer websocket_server_stop(sl::io::span<const char> data);
-
 support::buffer websocket_send(sl::io::span<const char> data);
 
 void initialize();
+
 } // namespace
+
 }
 
 extern "C" char* wilton_module_init() {
     try {
         // server
         wilton::server::initialize();
-        wilton::websocket_server::initialize();
 
         wilton::support::register_wiltoncall("server_create", wilton::server::server_create);
         wilton::support::register_wiltoncall("server_stop", wilton::server::server_stop);
@@ -105,9 +97,7 @@ extern "C" char* wilton_module_init() {
         wilton::support::register_wiltoncall("request_send_later", wilton::server::request_send_later);
         wilton::support::register_wiltoncall("request_send_with_response_writer", wilton::server::request_send_with_response_writer);
 
-        wilton::support::register_wiltoncall("websocket_server_create", wilton::websocket_server::websocket_server_create);
-        wilton::support::register_wiltoncall("websocket_server_stop", wilton::websocket_server::websocket_server_stop);
-        wilton::support::register_wiltoncall("websocket_send", wilton::websocket_server::websocket_send);
+        wilton::support::register_wiltoncall("websocket_send", wilton::server::websocket_send);
 
         // mustache
 //        wilton::support::register_wiltoncall("mustache_render", wilton::mustache::mustache_render);
