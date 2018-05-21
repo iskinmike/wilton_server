@@ -357,9 +357,9 @@ std::vector<wilton_WebsocketPath*> extract_and_delete_websocket_views(sl::json::
         }
         i++;
     }
-    throw support::exception(TRACEMSG(
-            "Invalid configuration object specified: 'views' list not specified," +
-            " conf: [" + conf.dumps() + "]"));
+
+    // websockets_not nescessary to define
+    return views;
 }
 
 // =========================================================================
